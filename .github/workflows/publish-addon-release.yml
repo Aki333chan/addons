@@ -1,0 +1,56 @@
+name: Publish addon release
+
+on:
+  push:
+    tags:
+      - '*-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release artifact
+        uses: actions/checkout@v4
+
+      - name: Prepare canonical plugin filename
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          component="${tag%%-v*}"
+          version="${tag#*-v}"
+          source="${tag}.jar"
+
+          case "${component}" in
+            companion) plugin="AurumCompanion" ;;
+            core) plugin="AurumCore" ;;
+            auth) plugin="AurumAuth" ;;
+            guilds) plugin="AurumGuilds" ;;
+            arena) plugin="AurumArena" ;;
+            slots) plugin="AurumSlots" ;;
+            npc) plugin="AddonsNPC" ;;
+            *) echo "Unsupported addon tag: ${tag}" >&2; exit 1 ;;
+          esac
+
+          test -f "${source}"
+          mkdir -p release-assets
+          destination="release-assets/${plugin}-${version}.jar"
+          cp "${source}" "${destination}"
+          sha256sum "${destination}" > "${destination}.sha256"
+          echo "destination=${destination}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.artifact.outputs.destination }}
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "${ARTIFACT}" "${ARTIFACT}.sha256" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
